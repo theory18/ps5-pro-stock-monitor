@@ -4,6 +4,7 @@ import json
 import os
 import smtplib
 import sys
+import urllib.parse
 import urllib.request
 from datetime import datetime
 from email.message import EmailMessage
@@ -64,17 +65,29 @@ def send_mail(subject: str, body: str) -> None:
         smtp.send_message(msg)
 
 
-# Schrijft de README met de voorraadstatus en het tijdstip van deze scan als gewone tekst.
+# Bouwt de URL van een statische shields.io-badge met het opgegeven label, de tekst en de kleur.
+def badge_url(label: str, message: str, color: str) -> str:
+    part = lambda text: urllib.parse.quote(text.replace("-", "--").replace("_", "__"), safe="")
+    return f"https://img.shields.io/badge/{part(label)}-{part(message)}-{color}?style=for-the-badge"
+
+
+# Schrijft de README met badges voor voorraad en laatste scan, met daaronder datum en uur als tekst.
 def write_readme(current: dict) -> None:
-    now = datetime.now(ZoneInfo("Europe/Brussels")).strftime("%d/%m/%Y om %H:%M")
+    now = datetime.now(ZoneInfo("Europe/Brussels"))
     available = current["stockLevelStatus"] != "outOfStock"
-    stock = "🟩 **BESCHIKBAAR**" if available else "🟥 Niet beschikbaar"
+    stock = badge_url(
+        "PS5 Pro 2TB",
+        "BESCHIKBAAR" if available else "niet beschikbaar",
+        "brightgreen" if available else "red",
+    )
+    scan = badge_url("laatste scan", now.strftime("%d/%m/%Y %H:%M"), "blue")
     README_FILE.write_text(
+        '<div align="center">\n\n'
         "# 🎮 PS5 Pro 2TB\n\n"
-        "| | |\n|---|---|\n"
-        f"| **Voorraad** | {stock} |\n"
-        f"| **Laatste scan** | {now} |\n\n"
-        f"[Naar de productpagina]({PRODUCT_URL})\n"
+        f"[![Voorraad]({stock})]({PRODUCT_URL})\n\n"
+        f"![Laatste scan]({scan})\n\n"
+        f"Laatste scan: **{now.strftime('%d/%m/%Y')}** om **{now.strftime('%H:%M')}**\n\n"
+        "</div>\n"
     )
 
 
