@@ -67,8 +67,11 @@ def send_mail(subject: str, body: str) -> None:
 
 # Bouwt de URL van een statische shields.io-badge met het opgegeven label, de tekst en de kleur.
 def badge_url(label: str, message: str, color: str) -> str:
-    part = lambda text: urllib.parse.quote(text.replace("-", "--").replace("_", "__"), safe="")
-    return f"https://img.shields.io/badge/{part(label)}-{part(message)}-{color}?style=for-the-badge"
+    query = urllib.parse.urlencode(
+        {"label": label, "message": message, "color": color, "style": "for-the-badge"},
+        quote_via=urllib.parse.quote,
+    )
+    return f"https://img.shields.io/static/v1?{query}"
 
 
 # Schrijft de README met badges voor voorraad en laatste scan, met daaronder datum en uur als tekst.
