@@ -17,6 +17,7 @@ API_URL = (
     f"/products/productList?fields=BASIC&lang=nl_BE&productCodes={PRODUCT_CODE}"
 )
 STATE_FILE = Path(__file__).with_name("status.json")
+README_FILE = Path(__file__).with_name("README.md")
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -63,21 +64,18 @@ def send_mail(subject: str, body: str) -> None:
         smtp.send_message(msg)
 
 
-# Schrijft shields.io-badgebestanden met het tijdstip van deze scan en de voorraadstatus.
-def write_badges(current: dict, directory: Path) -> None:
-    directory.mkdir(parents=True, exist_ok=True)
-    now = datetime.now(ZoneInfo("Europe/Brussels")).strftime("%d/%m/%Y %H:%M")
+# Schrijft de README met de voorraadstatus en het tijdstip van deze scan als gewone tekst.
+def write_readme(current: dict) -> None:
+    now = datetime.now(ZoneInfo("Europe/Brussels")).strftime("%d/%m/%Y om %H:%M")
     available = current["stockLevelStatus"] != "outOfStock"
-    badges = {
-        "lastscan.json": {"label": "laatste scan", "message": now, "color": "blue"},
-        "stock.json": {
-            "label": "PS5 Pro 2TB",
-            "message": "BESCHIKBAAR" if available else "niet beschikbaar",
-            "color": "brightgreen" if available else "red",
-        },
-    }
-    for name, badge in badges.items():
-        (directory / name).write_text(json.dumps({"schemaVersion": 1, "cacheSeconds": 300, **badge}))
+    stock = "🟩 **BESCHIKBAAR**" if available else "🟥 Niet beschikbaar"
+    README_FILE.write_text(
+        "# 🎮 PS5 Pro 2TB\n\n"
+        "| | |\n|---|---|\n"
+        f"| **Voorraad** | {stock} |\n"
+        f"| **Laatste scan** | {now} |\n\n"
+        f"[Naar de productpagina]({PRODUCT_URL})\n"
+    )
 
 
 # Vergelijkt de huidige status met de vorige, mailt bij verandering en bewaart de nieuwe status.
@@ -87,8 +85,7 @@ def main() -> int:
     print(f"Huidige status: {current}")
     print(f"Vorige status:  {previous}")
 
-    if os.environ.get("BADGE_DIR"):
-        write_badges(current, Path(os.environ["BADGE_DIR"]))
+    write_readme(current)
 
     if "--test-mail" in sys.argv:
         send_mail("PS5 Pro monitor: testmail", f"De monitor werkt.\n\nHuidige status: {current}\n{PRODUCT_URL}")
