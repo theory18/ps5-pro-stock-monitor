@@ -4,10 +4,10 @@ import json
 import os
 import smtplib
 import sys
-import urllib.parse
 import urllib.request
 from datetime import datetime
 from email.message import EmailMessage
+from html import escape
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -19,6 +19,7 @@ API_URL = (
 )
 STATE_FILE = Path(__file__).with_name("status.json")
 README_FILE = Path(__file__).with_name("README.md")
+BADGE_DIR = Path(__file__).with_name("badges")
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -65,30 +66,41 @@ def send_mail(subject: str, body: str) -> None:
         smtp.send_message(msg)
 
 
-# Bouwt de URL van een statische shields.io-badge met het opgegeven label, de tekst en de kleur.
-def badge_url(label: str, message: str, color: str) -> str:
-    query = urllib.parse.urlencode(
-        {"label": label, "message": message, "color": color, "style": "for-the-badge"},
-        quote_via=urllib.parse.quote,
+# Maakt een SVG-badge in de stijl van shields.io "for-the-badge", zodat GitHub hem zonder externe dienst toont.
+def make_badge(label: str, message: str, color: str) -> str:
+    label, message = label.upper(), message.upper()
+    width = lambda text: round(len(text) * 7.6) + 20
+    lw, mw = width(label), width(message)
+    text = lambda x, w, t: (
+        f'<text x="{x + w / 2}" y="18" text-anchor="middle" textLength="{w - 20}" '
+        f'lengthAdjust="spacingAndGlyphs">{escape(t)}</text>'
     )
-    return f"https://img.shields.io/static/v1?{query}"
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{lw + mw}" height="28" role="img" '
+        f'aria-label="{escape(label)}: {escape(message)}">'
+        f'<rect width="{lw}" height="28" fill="#555"/>'
+        f'<rect x="{lw}" width="{mw}" height="28" fill="{color}"/>'
+        '<g fill="#fff" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="10" font-weight="bold">'
+        f"{text(0, lw, label)}{text(lw, mw, message)}</g></svg>\n"
+    )
 
 
-# Schrijft de README met badges voor voorraad en laatste scan, met daaronder datum en uur als tekst.
+# Schrijft de badges en de README met voorraad en laatste scan, met daaronder datum en uur als tekst.
 def write_readme(current: dict) -> None:
     now = datetime.now(ZoneInfo("Europe/Brussels"))
     available = current["stockLevelStatus"] != "outOfStock"
-    stock = badge_url(
+    BADGE_DIR.mkdir(exist_ok=True)
+    (BADGE_DIR / "stock.svg").write_text(make_badge(
         "PS5 Pro 2TB",
-        "BESCHIKBAAR" if available else "niet beschikbaar",
-        "brightgreen" if available else "red",
-    )
-    scan = badge_url("laatste scan", now.strftime("%d/%m/%Y %H:%M"), "blue")
+        "Beschikbaar" if available else "niet beschikbaar",
+        "#4c1" if available else "#e05d44",
+    ))
+    (BADGE_DIR / "lastscan.svg").write_text(make_badge("laatste scan", now.strftime("%d/%m/%Y %H:%M"), "#007ec6"))
     README_FILE.write_text(
         '<div align="center">\n\n'
         "# 🎮 PS5 Pro 2TB\n\n"
-        f"[![Voorraad]({stock})]({PRODUCT_URL})\n\n"
-        f"![Laatste scan]({scan})\n\n"
+        f"[![Voorraad](badges/stock.svg)]({PRODUCT_URL})\n\n"
+        "![Laatste scan](badges/lastscan.svg)\n\n"
         f"Laatste scan: **{now.strftime('%d/%m/%Y')}** om **{now.strftime('%H:%M')}**\n\n"
         "</div>\n"
     )

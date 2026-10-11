@@ -37,10 +37,10 @@ jobs:
 
       - name: Sla status en README op
         run: |
-          if [[ -n "$(git status --porcelain status.json README.md)" ]]; then
+          if [[ -n "$(git status --porcelain status.json README.md badges)" ]]; then
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add status.json README.md
+            git add status.json README.md badges
             git commit -m "Scan: $(python -c 'import json;print(json.load(open("status.json"))["stockLevelStatus"])')"
             git push
           fi
