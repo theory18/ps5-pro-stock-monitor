@@ -100,7 +100,7 @@ def write_readme(current: dict) -> None:
         '<div align="center">\n\n'
         "# 🎮 PS5 Pro 2TB\n\n"
         f"[![Voorraad](badges/stock.svg)]({PRODUCT_URL})\n\n"
-        "![Laatste scan](badges/lastscan.svg)\n\n"
+        f"[![Laatste scan](badges/lastscan.svg)]({PRODUCT_URL})\n\n"
         f"Laatste scan: **{now.strftime('%d/%m/%Y')}** om **{now.strftime('%H:%M')}**\n\n"
         "</div>\n"
     )
