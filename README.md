@@ -6,6 +6,6 @@
 
 ![Laatste scan](badges/lastscan.svg)
 
-Laatste scan: **11/10/2026** om **22:18**
+Laatste scan: **11/10/2026** om **22:19**
 
 </div>
