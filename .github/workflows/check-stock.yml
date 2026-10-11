@@ -33,7 +33,17 @@ jobs:
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           MAIL_TO: ${{ secrets.MAIL_TO }}
+          BADGE_DIR: ${{ runner.temp }}/badges
         run: python check_stock.py ${{ inputs.test_mail && '--test-mail' || '' }}
+
+      # Overschrijft de status-branch met één commit, zodat de README-badges de laatste scan tonen.
+      - name: Publiceer badges
+        working-directory: ${{ runner.temp }}/badges
+        run: |
+          git init -q -b status
+          git add -A
+          git -c user.name="github-actions[bot]" -c user.email="github-actions[bot]@users.noreply.github.com" commit -q -m "Laatste scan"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" status
 
       - name: Sla nieuwe status op
         run: |
