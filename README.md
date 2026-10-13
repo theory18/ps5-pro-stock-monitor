@@ -6,6 +6,6 @@
 
 [![Laatste scan](badges/lastscan.svg)](https://direct.playstation.com/nl-be/buy-consoles/playstation5-pro-console-2-tb)
 
-Laatste scan: **12/10/2026** om **21:29**
+Laatste scan: **13/10/2026** om **03:36**
 
 </div>
