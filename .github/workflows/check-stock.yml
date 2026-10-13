@@ -2,7 +2,7 @@ name: PS5 Pro voorraadcheck
 
 on:
   schedule:
-    - cron: "*/5 * * * *"  # elke 5 minuten (minimum van GitHub, kan vertraging hebben)
+    - cron: "3,13,23,33,43,53 * * * *"  # elke 10 minuten op scheve minuten, weg van de drukte rond :00
   workflow_dispatch:
     inputs:
       test_mail:
