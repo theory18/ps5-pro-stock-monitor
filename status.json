@@ -2,5 +2,6 @@
   "stockLevelStatus": "outOfStock",
   "purchasable": true,
   "maxOrderQuantity": 0,
-  "price": 899.99
+  "price": 899.99,
+  "blockedRuns": 1
 }
