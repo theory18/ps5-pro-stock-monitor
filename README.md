@@ -2,10 +2,10 @@
 
 # 🎮 PS5 Pro 2TB
 
-[![Voorraad](badges/stock.svg)](https://direct.playstation.com/nl-be/buy-consoles/playstation5-pro-console-2-tb)
+[![Voorraad](badges/stock.svg)](https://www.playstation.com/nl-be/ps5/ps5-pro/buy-now/)
 
-[![Laatste scan](badges/lastscan.svg)](https://direct.playstation.com/nl-be/buy-consoles/playstation5-pro-console-2-tb)
+[![Laatste scan](badges/lastscan.svg)](https://www.playstation.com/nl-be/ps5/ps5-pro/buy-now/)
 
-Laatste scan: **15/10/2026** om **22:24**
+Laatste scan: **16/10/2026** om **03:05**
 
 </div>
