@@ -1,20 +1,24 @@
-"""Controleert de voorraad van de PS5 Pro (2TB) op PlayStation Direct België en mailt bij een wijziging."""
+"""Controleert de voorraad van de PS5 Pro (2TB) bij PlayStation Direct België (playstation.com) en mailt bij een wijziging."""
 
 import json
 import os
+import re
 import smtplib
 import sys
 import urllib.error
 import urllib.request
 from datetime import datetime
-from http.cookiejar import CookieJar
 from email.message import EmailMessage
 from html import escape
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+# Sinds oktober 2026 zit PlayStation Direct België op playstation.com; de oude link verwijst hierheen.
+PRODUCT_URL = "https://www.playstation.com/nl-be/ps5/ps5-pro/buy-now/"
+PRODUCT_SKU = "PSD001-PSDE01942_39-PS5PROCHASASIRSE-E000K3A7V"
+# Oude bron (direct.playstation.com), enkel gebruikt als SOURCE = "api".
+OLD_PRODUCT_URL = "https://direct.playstation.com/nl-be/buy-consoles/playstation5-pro-console-2-tb"
 PRODUCT_CODE = "1000050720-BX"
-PRODUCT_URL = "https://direct.playstation.com/nl-be/buy-consoles/playstation5-pro-console-2-tb"
 API_URL = (
     "https://api.direct.playstation.com/commercewebservices/ps-direct-be/users/anonymous"
     f"/products/productList?fields=BASIC&lang=nl_BE&productCodes={PRODUCT_CODE}"
@@ -22,39 +26,60 @@ API_URL = (
 STATE_FILE = Path(__file__).with_name("status.json")
 README_FILE = Path(__file__).with_name("README.md")
 BADGE_DIR = Path(__file__).with_name("badges")
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/140.0 Safari/537.36"
-    ),
-    "Accept": "application/json",
-    "Origin": "https://direct.playstation.com",
-    "Referer": PRODUCT_URL,
+USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/140.0 Safari/537.36"
+)
+PAGE_HEADERS = {
+    "User-Agent": USER_AGENT,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "nl-BE,nl;q=0.9,en;q=0.8",
 }
-PAGE_HEADERS = {
-    **HEADERS,
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+API_HEADERS = {
+    "User-Agent": USER_AGENT,
+    "Accept": "application/json",
+    "Origin": "https://direct.playstation.com",
+    "Referer": OLD_PRODUCT_URL,
 }
-del PAGE_HEADERS["Origin"], PAGE_HEADERS["Referer"]
 
-# Schakelaar: True = eerst de productpagina openen om Akamai-cookies te krijgen (zoals een browser).
-# Zet op False om terug te gaan naar enkel de API rechtstreeks aanroepen.
-USE_BROWSER_SESSION = True
+# Schakelaar voor de bron van de voorraadstatus:
+#   "page" = productpagina op playstation.com lezen (huidige site)
+#   "api"  = oude API van direct.playstation.com (geeft sinds de verhuis HTTP 403)
+SOURCE = "page"
 # Aantal geblokkeerde scans (HTTP 403) na elkaar voordat de run faalt en GitHub een foutmail stuurt.
 MAX_BLOCKED_RUNS = 3
 
 
-# Haalt de huidige voorraadstatus van het product op via de API die de website zelf gebruikt.
+# Haalt de huidige voorraadstatus op via de bron die in SOURCE gekozen is.
 def fetch_status() -> dict:
-    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
-    if USE_BROWSER_SESSION:
-        try:
-            opener.open(urllib.request.Request(PRODUCT_URL, headers=PAGE_HEADERS), timeout=30).read()
-        except urllib.error.HTTPError as err:
-            print(f"Productpagina gaf HTTP {err.code}, probeer de API toch.")
-    request = urllib.request.Request(API_URL, headers=HEADERS)
-    with opener.open(request, timeout=30) as response:
+    return fetch_status_from_page() if SOURCE == "page" else fetch_status_from_api()
+
+
+# Leest de voorraad uit de schema.org-productgegevens (JSON-LD) in de HTML van de productpagina.
+def fetch_status_from_page() -> dict:
+    request = urllib.request.Request(PRODUCT_URL, headers=PAGE_HEADERS)
+    with urllib.request.urlopen(request, timeout=30) as response:
+        html = response.read().decode("utf-8")
+    for block in re.findall(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', html, re.S):
+        data = json.loads(block)
+        if data.get("@type") == "Product" and data.get("sku") == PRODUCT_SKU:
+            offer = data["offers"]
+            availability = offer["availability"].rsplit("/", 1)[-1]  # bv. "OutOfStock"
+            return {
+                # Zelfde notatie als de oude API ("outOfStock"), zodat status.json vergelijkbaar blijft.
+                "stockLevelStatus": availability[0].lower() + availability[1:],
+                "price": float(offer["price"]),
+            }
+    raise RuntimeError(
+        f"Geen productgegevens voor SKU {PRODUCT_SKU} gevonden op {PRODUCT_URL}. "
+        "Sony heeft de pagina of het product waarschijnlijk aangepast."
+    )
+
+
+# Haalt de voorraadstatus op via de oude API van direct.playstation.com.
+def fetch_status_from_api() -> dict:
+    request = urllib.request.Request(API_URL, headers=API_HEADERS)
+    with urllib.request.urlopen(request, timeout=30) as response:
         data = json.load(response)
     product = next(p for p in data["products"] if p["code"] == PRODUCT_CODE)
     return {
@@ -63,6 +88,15 @@ def fetch_status() -> dict:
         "maxOrderQuantity": product.get("maxOrderQuantity"),
         "price": product.get("price", {}).get("value"),
     }
+
+
+# Statussen (oude API en schema.org) die betekenen dat je de console niet kan kopen.
+UNAVAILABLE_STATUSES = {"outOfStock", "soldOut", "discontinued"}
+
+
+# Geeft True als de status betekent dat de console te koop is.
+def is_available(status: str) -> bool:
+    return status not in UNAVAILABLE_STATUSES
 
 
 # Leest de laatst opgeslagen status, of None als er nog geen is.
@@ -108,7 +142,7 @@ def make_badge(label: str, message: str, color: str) -> str:
 # Schrijft de badges en de README met voorraad en laatste scan, met daaronder datum en uur als tekst.
 def write_readme(current: dict) -> None:
     now = datetime.now(ZoneInfo("Europe/Brussels"))
-    available = current["stockLevelStatus"] != "outOfStock"
+    available = is_available(current["stockLevelStatus"])
     BADGE_DIR.mkdir(exist_ok=True)
     (BADGE_DIR / "stock.svg").write_text(make_badge(
         "PS5 Pro 2TB",
@@ -136,7 +170,7 @@ def handle_blocked(previous: dict | None) -> int:
         print(
             f"::error::PlayStation (Akamai) blokkeert de scan al {blocked} keer na elkaar met HTTP 403. "
             "De voorraad wordt niet meer gecontroleerd tot dit opgelost is. "
-            "Probeer in check_stock.py USE_BROWSER_SESSION om te zetten."
+            "Controleer de productpagina of zet SOURCE in check_stock.py om."
         )
         return 1
     print(f"Scan geblokkeerd door Akamai (HTTP 403), {blocked}/{MAX_BLOCKED_RUNS}. Volgende run probeert opnieuw.")
@@ -163,7 +197,7 @@ def main() -> int:
         return 0
 
     if previous and previous.get("stockLevelStatus") not in (None, current["stockLevelStatus"]):
-        available = current["stockLevelStatus"] != "outOfStock"
+        available = is_available(current["stockLevelStatus"])
         subject = (
             "PS5 Pro is BESCHIKBAAR op PlayStation Direct!"
             if available
