@@ -4,8 +4,10 @@ import json
 import os
 import smtplib
 import sys
+import urllib.error
 import urllib.request
 from datetime import datetime
+from http.cookiejar import CookieJar
 from email.message import EmailMessage
 from html import escape
 from pathlib import Path
@@ -28,13 +30,31 @@ HEADERS = {
     "Accept": "application/json",
     "Origin": "https://direct.playstation.com",
     "Referer": PRODUCT_URL,
+    "Accept-Language": "nl-BE,nl;q=0.9,en;q=0.8",
 }
+PAGE_HEADERS = {
+    **HEADERS,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+}
+del PAGE_HEADERS["Origin"], PAGE_HEADERS["Referer"]
+
+# Schakelaar: True = eerst de productpagina openen om Akamai-cookies te krijgen (zoals een browser).
+# Zet op False om terug te gaan naar enkel de API rechtstreeks aanroepen.
+USE_BROWSER_SESSION = True
+# Aantal geblokkeerde scans (HTTP 403) na elkaar voordat de run faalt en GitHub een foutmail stuurt.
+MAX_BLOCKED_RUNS = 3
 
 
 # Haalt de huidige voorraadstatus van het product op via de API die de website zelf gebruikt.
 def fetch_status() -> dict:
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
+    if USE_BROWSER_SESSION:
+        try:
+            opener.open(urllib.request.Request(PRODUCT_URL, headers=PAGE_HEADERS), timeout=30).read()
+        except urllib.error.HTTPError as err:
+            print(f"Productpagina gaf HTTP {err.code}, probeer de API toch.")
     request = urllib.request.Request(API_URL, headers=HEADERS)
-    with urllib.request.urlopen(request, timeout=30) as response:
+    with opener.open(request, timeout=30) as response:
         data = json.load(response)
     product = next(p for p in data["products"] if p["code"] == PRODUCT_CODE)
     return {
@@ -106,10 +126,32 @@ def write_readme(current: dict) -> None:
     )
 
 
+# Telt een door Akamai geblokkeerde scan; faalt pas als dat MAX_BLOCKED_RUNS keer na elkaar gebeurt.
+def handle_blocked(previous: dict | None) -> int:
+    state = dict(previous or {})
+    state["blockedRuns"] = state.get("blockedRuns", 0) + 1
+    STATE_FILE.write_text(json.dumps(state, indent=2) + "\n")
+    blocked = state["blockedRuns"]
+    if blocked >= MAX_BLOCKED_RUNS:
+        print(
+            f"::error::PlayStation (Akamai) blokkeert de scan al {blocked} keer na elkaar met HTTP 403. "
+            "De voorraad wordt niet meer gecontroleerd tot dit opgelost is. "
+            "Probeer in check_stock.py USE_BROWSER_SESSION om te zetten."
+        )
+        return 1
+    print(f"Scan geblokkeerd door Akamai (HTTP 403), {blocked}/{MAX_BLOCKED_RUNS}. Volgende run probeert opnieuw.")
+    return 0
+
+
 # Vergelijkt de huidige status met de vorige, mailt bij verandering en bewaart de nieuwe status.
 def main() -> int:
-    current = fetch_status()
     previous = load_previous()
+    try:
+        current = fetch_status()
+    except urllib.error.HTTPError as err:
+        if err.code != 403:
+            raise
+        return handle_blocked(previous)
     print(f"Huidige status: {current}")
     print(f"Vorige status:  {previous}")
 
@@ -120,7 +162,7 @@ def main() -> int:
         print("Testmail verstuurd.")
         return 0
 
-    if previous is not None and previous["stockLevelStatus"] != current["stockLevelStatus"]:
+    if previous and previous.get("stockLevelStatus") not in (None, current["stockLevelStatus"]):
         available = current["stockLevelStatus"] != "outOfStock"
         subject = (
             "PS5 Pro is BESCHIKBAAR op PlayStation Direct!"
