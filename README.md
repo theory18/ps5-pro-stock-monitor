@@ -6,6 +6,6 @@
 
 [![Laatste scan](badges/lastscan.svg)](https://www.playstation.com/nl-be/ps5/ps5-pro/buy-now/)
 
-Laatste scan: **18/10/2026** om **06:28**
+Laatste scan: **18/10/2026** om **10:59**
 
 </div>
